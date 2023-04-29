@@ -71,6 +71,9 @@ jobs:
           - board: m5stack-core
           - board: m5stack-coreink
           - board: nano-g1-explorer
+          - board: ut2uh-r6822dh
+          - board: ut2uh-k46v1
+          - board: ut2uh-k46v2
     uses: ./.github/workflows/build_esp32.yml
     with:
       board: ${{ matrix.board }}
