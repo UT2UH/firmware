@@ -26,16 +26,14 @@
 // In transmitting, set TXEN as high communication level，RXEN pin is low level;
 // In receiving, set RXEN as high communication level, TXEN is lowlevel;
 // Before powering off, set TXEN、RXEN as low level.
-#define LORA_RXEN   14 // Input - RF switch RX control, connecting external MCU IO, valid in high level
-#define LORA_TXEN   RADIOLIB_NC // Input - RF switch TX control, connecting external MCU IO or DIO2, valid in high level
 
 // common pinouts for SX126X modules
 #define SX126X_CS    LORA_CS // NSS for SX126X
 #define SX126X_DIO1  LORA_DIO1
 #define SX126X_BUSY  LORA_DIO2
 #define SX126X_RESET LORA_RESET
-#define SX126X_RXEN  LORA_RXEN
-#define SX126X_TXEN  RADIOLIB_NC
+#define SX126X_RXEN  14
+#define SX126X_TXEN  13
 
 // Set lora.tx_power to 13 for Hydra or other E22 900M30S target due to PA
-#define SX126X_MAX_POWER 14
+#define SX126X_MAX_POWER 22

@@ -37,20 +37,20 @@ template <typename T> bool SX126xInterface<T>::init()
 
     RadioLibInterface::init();
 
-#if defined SX126X_R6822DH
-    // set RF switch configuration for R6822DH
-    static const uint8_t rfswitch_pins[] =
-                            {SX126X_RXEN, RADIOLIB_NC,  RADIOLIB_NC,};
-    static const Module::RfSwitchMode_t rfswitch_table[] = {
-        {Module::MODE_IDLE, {HIGH, LOW}},
-        {Module::MODE_RX,   {HIGH, LOW}},
-        {Module::MODE_TX,   {LOW, HIGH}},
-        END_OF_MODE_TABLE,
-    };
-    // set RF switch control configuration
-    // this has to be done prior to calling begin()
-    lora.setRfSwitchTable(rfswitch_pins, rfswitch_table);
-#endif
+// #ifdef SX126X_R6822DH
+//     // set RF switch configuration for R6822DH
+//     static const uint8_t rfswitch_pins[] =
+//                             {SX126X_RXEN, SX126X_TXEN,  RADIOLIB_NC,};
+//     static const Module::RfSwitchMode_t rfswitch_table[] = {
+//         {Module::MODE_IDLE, {HIGH, LOW}},
+//         {Module::MODE_RX,   {HIGH, LOW}},
+//         {Module::MODE_TX,   {LOW, HIGH}},
+//         END_OF_MODE_TABLE,
+//     };
+//     // set RF switch control configuration
+//     // this has to be done prior to calling begin()
+//     lora.setRfSwitchTable(rfswitch_pins, rfswitch_table);
+// #endif
 
     if (power == 0)
         power = SX126X_MAX_POWER;
@@ -83,7 +83,7 @@ template <typename T> bool SX126xInterface<T>::init()
         res = lora.setDio2AsRfSwitch(true);
 #endif
 
-#if defined(SX126X_TXEN) && (SX126X_TXEN != RADIOLIB_NC) || defined(SX126X_RXEN) && (SX126X_RXEN != RADIOLIB_NC)
+#if defined (SX126X_TXEN) && (SX126X_TXEN != RADIOLIB_NC) || defined (SX126X_RXEN) && (SX126X_RXEN != RADIOLIB_NC)
     // lora.begin sets Dio2 as RF switch control, which is not true if we are manually controlling RX and TX
     if (res == RADIOLIB_ERR_NONE) {
         res = lora.setDio2AsRfSwitch(false);
