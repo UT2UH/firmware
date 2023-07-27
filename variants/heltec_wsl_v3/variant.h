@@ -1,3 +1,6 @@
+#define I2C_SCL 47
+#define I2C_SDA 48
+
 #define LED_PIN LED
 
 #define HAS_SCREEN 0
@@ -5,8 +8,12 @@
 #define VEXT_ENABLE Vext // active low, powers the oled display and the lora antenna boost
 #define BUTTON_PIN 0
 
+#define PIN_GPS_EN 46 // GPS power enable pin
+
 #define BATTERY_PIN 1 // A battery voltage measurement pin, voltage divider connected here to measure battery voltage
-#define ADC_MULTIPLIER 5.22
+#define ADC_CHANNEL ADC1_GPIO1_CHANNEL
+#define ADC_ATTENUATION ADC_ATTEN_DB_2_5 // lower dB for high resistance voltage divider
+#define ADC_MULTIPLIER 4.9
 
 #define USE_SX1262
 

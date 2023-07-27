@@ -8,6 +8,17 @@
 #include "mesh/generated/meshtastic/rtttl.pb.h"
 #include <Arduino.h>
 
+#include "main.h"
+
+#ifdef HAS_NCP5623
+#include <graphics/RAKled.h>
+NCP5623 rgb;
+
+uint8_t red = 0;
+uint8_t green = 0;
+uint8_t blue = 0;
+#endif
+
 #ifndef PIN_BUZZER
 #define PIN_BUZZER false
 #endif
@@ -73,6 +84,19 @@ int32_t ExternalNotificationModule::runOnce()
                 millis()) {
                 getExternal(2) ? setExternalOff(2) : setExternalOn(2);
             }
+#ifdef HAS_NCP5623
+            if (rgb_found.type == ScanI2C::NCP5623) {
+                green = (green + 50) % 255;
+                red = abs(red - green) % 255;
+                blue = abs(blue / red) % 255;
+
+                rgb.setColor(red, green, blue);
+            }
+#endif
+
+#ifdef T_WATCH_S3
+            drv.go();
+#endif
         }
 
         // now let the PWM buzzer play
@@ -84,6 +108,7 @@ int32_t ExternalNotificationModule::runOnce()
                 rtttl::begin(config.device.buzzer_gpio, rtttlConfig.ringtone);
             }
         }
+
         return 25;
     }
 }
@@ -103,9 +128,18 @@ void ExternalNotificationModule::setExternalOn(uint8_t index)
             digitalWrite(moduleConfig.external_notification.output_buzzer, true);
         break;
     default:
-        digitalWrite(output, (moduleConfig.external_notification.active ? true : false));
+        if (output > 0)
+            digitalWrite(output, (moduleConfig.external_notification.active ? true : false));
         break;
     }
+#ifdef HAS_NCP5623
+    if (rgb_found.type == ScanI2C::NCP5623) {
+        rgb.setColor(red, green, blue);
+    }
+#endif
+#ifdef T_WATCH_S3
+    drv.go();
+#endif
 }
 
 void ExternalNotificationModule::setExternalOff(uint8_t index)
@@ -123,9 +157,22 @@ void ExternalNotificationModule::setExternalOff(uint8_t index)
             digitalWrite(moduleConfig.external_notification.output_buzzer, false);
         break;
     default:
-        digitalWrite(output, (moduleConfig.external_notification.active ? false : true));
+        if (output > 0)
+            digitalWrite(output, (moduleConfig.external_notification.active ? false : true));
         break;
     }
+
+#ifdef HAS_NCP5623
+    if (rgb_found.type == ScanI2C::NCP5623) {
+        red = 0;
+        green = 0;
+        blue = 0;
+        rgb.setColor(red, green, blue);
+    }
+#endif
+#ifdef T_WATCH_S3
+    drv.stop();
+#endif
 }
 
 bool ExternalNotificationModule::getExternal(uint8_t index)
@@ -139,6 +186,9 @@ void ExternalNotificationModule::stopNow()
     nagCycleCutoff = 1; // small value
     isNagging = false;
     setIntervalFromNow(0);
+#ifdef T_WATCH_S3
+    drv.stop();
+#endif
 }
 
 ExternalNotificationModule::ExternalNotificationModule()
@@ -150,7 +200,6 @@ ExternalNotificationModule::ExternalNotificationModule()
         without having to configure it from the PythonAPI or WebUI.
     */
 
-    // moduleConfig.external_notification.enabled = true;
     // moduleConfig.external_notification.alert_message = true;
     // moduleConfig.external_notification.alert_message_buzzer = true;
     // moduleConfig.external_notification.alert_message_vibra = true;
@@ -178,8 +227,10 @@ ExternalNotificationModule::ExternalNotificationModule()
                                                            : EXT_NOTIFICATION_MODULE_OUTPUT;
 
         // Set the direction of a pin
-        LOG_INFO("Using Pin %i in digital mode\n", output);
-        pinMode(output, OUTPUT);
+        if (output > 0) {
+            LOG_INFO("Using Pin %i in digital mode\n", output);
+            pinMode(output, OUTPUT);
+        }
         setExternalOff(0);
         externalTurnedOn[0] = 0;
         if (moduleConfig.external_notification.output_vibra) {
@@ -200,6 +251,12 @@ ExternalNotificationModule::ExternalNotificationModule()
                 LOG_INFO("Using Pin %i in PWM mode\n", config.device.buzzer_gpio);
             }
         }
+#ifdef HAS_NCP5623
+        if (rgb_found.type == ScanI2C::NCP5623) {
+            rgb.begin();
+            rgb.setCurrent(10);
+        }
+#endif
     } else {
         LOG_INFO("External Notification Module Disabled\n");
         disable();
@@ -209,7 +266,12 @@ ExternalNotificationModule::ExternalNotificationModule()
 ProcessMessage ExternalNotificationModule::handleReceived(const meshtastic_MeshPacket &mp)
 {
     if (moduleConfig.external_notification.enabled) {
-
+#if T_WATCH_S3
+        drv.setWaveform(0, 75);
+        drv.setWaveform(1, 56);
+        drv.setWaveform(2, 0);
+        drv.go();
+#endif
         if (getFrom(&mp) != nodeDB.getNodeNum()) {
 
             // Check if the message contains a bell character. Don't do this loop for every pin, just once.
@@ -300,10 +362,8 @@ ProcessMessage ExternalNotificationModule::handleReceived(const meshtastic_MeshP
                     nagCycleCutoff = millis() + moduleConfig.external_notification.output_ms;
                 }
             }
-
             setIntervalFromNow(0); // run once so we know if we should do something
         }
-
     } else {
         LOG_INFO("External Notification Module Disabled\n");
     }

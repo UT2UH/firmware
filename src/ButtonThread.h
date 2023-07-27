@@ -4,6 +4,7 @@
 #include "concurrency/OSThread.h"
 #include "configuration.h"
 #include "graphics/Screen.h"
+#include "main.h"
 #include "power.h"
 #include <OneButton.h>
 
@@ -51,7 +52,7 @@ class ButtonThread : public concurrency::OSThread
         pinMode(config.device.button_gpio ? config.device.button_gpio : BUTTON_PIN, INPUT_PULLUP_SENSE);
 #endif
         userButton.attachClick(userButtonPressed);
-        userButton.setClickTicks(300);
+        userButton.setClickMs(300);
         userButton.attachDuringLongPress(userButtonPressedLong);
         userButton.attachDoubleClick(userButtonDoublePressed);
         userButton.attachMultiClick(userButtonMultiPressed);
@@ -98,8 +99,23 @@ class ButtonThread : public concurrency::OSThread
         userButtonTouch.tick();
         canSleep &= userButtonTouch.isIdle();
 #endif
-        // if (!canSleep) LOG_DEBUG("Supressing sleep!\n");
+        // if (!canSleep) LOG_DEBUG("Suppressing sleep!\n");
         // else LOG_DEBUG("sleep ok\n");
+#if defined(ST7735_CS) || defined(ILI9341_DRIVER) || defined(ST7789_CS)
+        int x, y = 0;
+        screen->getTouch(&x, &y);
+        if (x > 0 && y > 0) {
+#ifdef T_WATCH_S3
+            drv.setWaveform(0, 75);
+            drv.setWaveform(1, 0); // end waveform
+            drv.go();
+#endif
+            LOG_DEBUG("touch %d %d\n", x, y);
+            powerFSM.trigger(EVENT_PRESS);
+            return 150; // Check for next touch every in 150ms
+        }
+
+#endif
 
         return 5;
     }
@@ -157,7 +173,7 @@ class ButtonThread : public concurrency::OSThread
         digitalWrite(PIN_EINK_EN, digitalRead(PIN_EINK_EN) == LOW);
 #endif
         screen->print("Sent ad-hoc ping\n");
-        service.refreshMyNodeInfo();
+        service.refreshLocalMeshNode();
         service.sendNetworkPing(NODENUM_BROADCAST, true);
     }
 

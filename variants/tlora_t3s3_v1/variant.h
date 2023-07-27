@@ -1,6 +1,8 @@
 #undef GPS_RX_PIN
 #undef GPS_TX_PIN
 
+#define PIN_GPS_EN 42 // GPS power enable pin
+
 #define HAS_SDCARD
 #define SDCARD_USE_SPI1
 
@@ -9,6 +11,7 @@
 #define BATTERY_PIN 1 // A battery voltage measurement pin, voltage divider connected here to measure battery voltage
 // ratio of voltage divider = 2.0 (R42=100k, R43=100k)
 #define ADC_MULTIPLIER 2.11 // 2.0 + 10% for correction of display undervoltage.
+#define ADC_CHANNEL ADC1_GPIO1_CHANNEL
 
 #define I2C_SDA 18 // I2C pins for this board
 #define I2C_SCL 17

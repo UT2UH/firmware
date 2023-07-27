@@ -36,8 +36,6 @@ int32_t StoreForwardModule::runOnce()
                     this->packetHistoryTXQueue_index++;
                 }
             }
-            LOG_DEBUG("*** SF bitrate = %f bytes / sec\n", myNodeInfo.bitrate);
-
         } else if ((millis() - lastHeartbeat > (heartbeatInterval * 1000)) && airTime->isTxAllowedChannelUtil(true)) {
             lastHeartbeat = millis();
             LOG_INFO("*** Sending heartbeat\n");
@@ -64,7 +62,7 @@ void StoreForwardModule::populatePSRAM()
         https://learn.upesy.com/en/programmation/psram.html#psram-tab
     */
 
-    LOG_DEBUG("*** Before PSRAM initilization: heap %d/%d PSRAM %d/%d\n", memGet.getFreeHeap(), memGet.getHeapSize(),
+    LOG_DEBUG("*** Before PSRAM initialization: heap %d/%d PSRAM %d/%d\n", memGet.getFreeHeap(), memGet.getHeapSize(),
               memGet.getFreePsram(), memGet.getPsramSize());
 
     this->packetHistoryTXQueue =
@@ -79,7 +77,7 @@ void StoreForwardModule::populatePSRAM()
 
     this->packetHistory = static_cast<PacketHistoryStruct *>(ps_calloc(numberOfPackets, sizeof(PacketHistoryStruct)));
 
-    LOG_DEBUG("*** After PSRAM initilization: heap %d/%d PSRAM %d/%d\n", memGet.getFreeHeap(), memGet.getHeapSize(),
+    LOG_DEBUG("*** After PSRAM initialization: heap %d/%d PSRAM %d/%d\n", memGet.getFreeHeap(), memGet.getHeapSize(),
               memGet.getFreePsram(), memGet.getPsramSize());
     LOG_DEBUG("*** numberOfPackets for packetHistory - %u\n", numberOfPackets);
 }
@@ -266,7 +264,6 @@ ProcessMessage StoreForwardModule::handleReceived(const meshtastic_MeshPacket &m
                     storeForwardModule->historyAdd(mp);
                     LOG_INFO("*** S&F stored. Message history contains %u records now.\n", this->packetHistoryCurrent);
                 }
-
             } else if (mp.decoded.portnum == meshtastic_PortNum_STORE_FORWARD_APP) {
                 auto &p = mp.decoded;
                 meshtastic_StoreAndForward scratch;

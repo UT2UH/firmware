@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "GPS.h"
 #include "MeshService.h"
 #include "NodeDB.h"
+#include "error.h"
 #include "gps/GeoCoord.h"
 #include "gps/RTC.h"
 #include "graphics/images.h"
@@ -101,7 +102,7 @@ static uint16_t displayWidth, displayHeight;
 #define SCREEN_WIDTH displayWidth
 #define SCREEN_HEIGHT displayHeight
 
-#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS)
+#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS) || defined(ST7789_CS)
 // The screen is bigger so use bigger fonts
 #define FONT_SMALL ArialMT_Plain_16  // Height: 19
 #define FONT_MEDIUM ArialMT_Plain_24 // Height: 28
@@ -295,7 +296,7 @@ static void drawModuleFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int
 static void drawFrameBluetooth(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
 {
     int x_offset = display->width() / 2;
-    int y_offset = display->height() == 64 ? 0 : 32;
+    int y_offset = display->height() <= 80 ? 0 : 32;
     display->setTextAlignment(TEXT_ALIGN_CENTER);
     display->setFont(FONT_MEDIUM);
     display->drawString(x_offset + x, y_offset + y, "Bluetooth");
@@ -319,18 +320,18 @@ static void drawFrameBluetooth(OLEDDisplay *display, OLEDDisplayUiState *state, 
 
 static void drawFrameShutdown(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
 {
+    uint16_t x_offset = display->width() / 2;
     display->setTextAlignment(TEXT_ALIGN_CENTER);
-
     display->setFont(FONT_MEDIUM);
-    display->drawString(64 + x, 26 + y, "Shutting down...");
+    display->drawString(x_offset + x, 26 + y, "Shutting down...");
 }
 
 static void drawFrameReboot(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
 {
+    uint16_t x_offset = display->width() / 2;
     display->setTextAlignment(TEXT_ALIGN_CENTER);
-
     display->setFont(FONT_MEDIUM);
-    display->drawString(64 + x, 26 + y, "Rebooting...");
+    display->drawString(x_offset + x, 26 + y, "Rebooting...");
 }
 
 static void drawFrameFirmware(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
@@ -352,14 +353,14 @@ static void drawCriticalFaultFrame(OLEDDisplay *display, OLEDDisplayUiState *sta
     display->setFont(FONT_MEDIUM);
 
     char tempBuf[24];
-    snprintf(tempBuf, sizeof(tempBuf), "Critical fault #%d", myNodeInfo.error_code);
+    snprintf(tempBuf, sizeof(tempBuf), "Critical fault #%d", error_code);
     display->drawString(0 + x, 0 + y, tempBuf);
     display->setTextAlignment(TEXT_ALIGN_LEFT);
     display->setFont(FONT_SMALL);
     display->drawString(0 + x, FONT_HEIGHT_MEDIUM + y, "For help, please visit \nmeshtastic.org");
 }
 
-// Ignore messages orginating from phone (from the current node 0x0) unless range test or store and forward module are enabled
+// Ignore messages originating from phone (from the current node 0x0) unless range test or store and forward module are enabled
 static bool shouldDrawMessage(const meshtastic_MeshPacket *packet)
 {
     return packet->from != 0 && !moduleConfig.range_test.enabled && !moduleConfig.store_forward.enabled;
@@ -372,7 +373,7 @@ static void drawTextMessageFrame(OLEDDisplay *display, OLEDDisplayUiState *state
     static char tempBuf[237];
 
     meshtastic_MeshPacket &mp = devicestate.rx_text_message;
-    meshtastic_NodeInfo *node = nodeDB.getNode(getFrom(&mp));
+    meshtastic_NodeInfoLite *node = nodeDB.getMeshNode(getFrom(&mp));
     // LOG_DEBUG("drawing text message from 0x%x: %s\n", mp.from,
     // mp.decoded.variant.data.decoded.bytes);
 
@@ -404,7 +405,44 @@ static void drawTextMessageFrame(OLEDDisplay *display, OLEDDisplayUiState *state
     display->drawStringMaxWidth(0 + x, 0 + y + FONT_HEIGHT_SMALL, x + display->getWidth(), tempBuf);
 }
 
-/// Draw a series of fields in a column, wrapping to multiple colums if needed
+/// Draw the last waypoint we received
+static void drawWaypointFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
+{
+    static char tempBuf[237];
+
+    meshtastic_MeshPacket &mp = devicestate.rx_waypoint;
+    meshtastic_NodeInfoLite *node = nodeDB.getMeshNode(getFrom(&mp));
+
+    display->setTextAlignment(TEXT_ALIGN_LEFT);
+    display->setFont(FONT_SMALL);
+    if (config.display.displaymode == meshtastic_Config_DisplayConfig_DisplayMode_INVERTED) {
+        display->fillRect(0 + x, 0 + y, x + display->getWidth(), y + FONT_HEIGHT_SMALL);
+        display->setColor(BLACK);
+    }
+
+    uint32_t seconds = sinceReceived(&mp);
+    uint32_t minutes = seconds / 60;
+    uint32_t hours = minutes / 60;
+    uint32_t days = hours / 24;
+
+    if (config.display.heading_bold) {
+        display->drawStringf(1 + x, 0 + y, tempBuf, "%s ago from %s",
+                             screen->drawTimeDelta(days, hours, minutes, seconds).c_str(),
+                             (node && node->has_user) ? node->user.short_name : "???");
+    }
+    display->drawStringf(0 + x, 0 + y, tempBuf, "%s ago from %s", screen->drawTimeDelta(days, hours, minutes, seconds).c_str(),
+                         (node && node->has_user) ? node->user.short_name : "???");
+
+    display->setColor(WHITE);
+    meshtastic_Waypoint scratch;
+    memset(&scratch, 0, sizeof(scratch));
+    if (pb_decode_from_bytes(mp.decoded.payload.bytes, mp.decoded.payload.size, &meshtastic_Waypoint_msg, &scratch)) {
+        snprintf(tempBuf, sizeof(tempBuf), "Received waypoint: %s", scratch.name);
+        display->drawStringMaxWidth(0 + x, 0 + y + FONT_HEIGHT_SMALL, x + display->getWidth(), tempBuf);
+    }
+}
+
+/// Draw a series of fields in a column, wrapping to multiple columns if needed
 static void drawColumns(OLEDDisplay *display, int16_t x, int16_t y, const char **fields)
 {
     // The coordinates define the left starting point of the text
@@ -454,7 +492,7 @@ static void drawNodes(OLEDDisplay *display, int16_t x, int16_t y, NodeStatus *no
 {
     char usersString[20];
     snprintf(usersString, sizeof(usersString), "%d/%d", nodeStatus->getNumOnline(), nodeStatus->getNumTotal());
-#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS)
+#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS) || defined(ST7789_CS)
     display->drawFastImage(x, y + 3, 8, 8, imgUser);
 #else
     display->drawFastImage(x, y, 8, 8, imgUser);
@@ -674,13 +712,6 @@ static float estimatedHeading(double lat, double lon)
     return b;
 }
 
-/// Sometimes we will have Position objects that only have a time, so check for
-/// valid lat/lon
-static bool hasPosition(meshtastic_NodeInfo *n)
-{
-    return n->has_position && (n->position.latitude_i != 0 || n->position.longitude_i != 0);
-}
-
 static uint16_t getCompassDiam(OLEDDisplay *display)
 {
     uint16_t diam = 0;
@@ -762,16 +793,16 @@ static void drawNodeInfo(OLEDDisplay *display, OLEDDisplayUiState *state, int16_
     if (state->currentFrame != prevFrame) {
         prevFrame = state->currentFrame;
 
-        nodeIndex = (nodeIndex + 1) % nodeDB.getNumNodes();
-        meshtastic_NodeInfo *n = nodeDB.getNodeByIndex(nodeIndex);
+        nodeIndex = (nodeIndex + 1) % nodeDB.getNumMeshNodes();
+        meshtastic_NodeInfoLite *n = nodeDB.getMeshNodeByIndex(nodeIndex);
         if (n->num == nodeDB.getNodeNum()) {
             // Don't show our node, just skip to next
-            nodeIndex = (nodeIndex + 1) % nodeDB.getNumNodes();
-            n = nodeDB.getNodeByIndex(nodeIndex);
+            nodeIndex = (nodeIndex + 1) % nodeDB.getNumMeshNodes();
+            n = nodeDB.getMeshNodeByIndex(nodeIndex);
         }
     }
 
-    meshtastic_NodeInfo *node = nodeDB.getNodeByIndex(nodeIndex);
+    meshtastic_NodeInfoLite *node = nodeDB.getMeshNodeByIndex(nodeIndex);
 
     display->setFont(FONT_SMALL);
 
@@ -804,8 +835,12 @@ static void drawNodeInfo(OLEDDisplay *display, OLEDDisplayUiState *state, int16_
     }
 
     static char distStr[20];
-    strncpy(distStr, "? km", sizeof(distStr)); // might not have location data
-    meshtastic_NodeInfo *ourNode = nodeDB.getNode(nodeDB.getNodeNum());
+    if (config.display.units == meshtastic_Config_DisplayConfig_DisplayUnits_IMPERIAL) {
+        strncpy(distStr, "? mi", sizeof(distStr)); // might not have location data
+    } else {
+        strncpy(distStr, "? km", sizeof(distStr));
+    }
+    meshtastic_NodeInfoLite *ourNode = nodeDB.getMeshNode(nodeDB.getNodeNum());
     const char *fields[] = {username, distStr, signalStr, lastStr, NULL};
     int16_t compassX = 0, compassY = 0;
 
@@ -819,15 +854,15 @@ static void drawNodeInfo(OLEDDisplay *display, OLEDDisplayUiState *state, int16_
     }
     bool hasNodeHeading = false;
 
-    if (ourNode && hasPosition(ourNode)) {
-        meshtastic_Position &op = ourNode->position;
+    if (ourNode && hasValidPosition(ourNode)) {
+        meshtastic_PositionLite &op = ourNode->position;
         float myHeading = estimatedHeading(DegD(op.latitude_i), DegD(op.longitude_i));
         drawCompassNorth(display, compassX, compassY, myHeading);
 
-        if (hasPosition(node)) {
+        if (hasValidPosition(node)) {
             // display direction toward node
             hasNodeHeading = true;
-            meshtastic_Position &p = node->position;
+            meshtastic_PositionLite &p = node->position;
             float d =
                 GeoCoord::latLongToMeter(DegD(p.latitude_i), DegD(p.longitude_i), DegD(op.latitude_i), DegD(op.longitude_i));
 
@@ -855,7 +890,8 @@ static void drawNodeInfo(OLEDDisplay *display, OLEDDisplayUiState *state, int16_
     if (!hasNodeHeading) {
         // direction to node is unknown so display question mark
         // Debug info for gps lock errors
-        // LOG_DEBUG("ourNode %d, ourPos %d, theirPos %d\n", !!ourNode, ourNode && hasPosition(ourNode), hasPosition(node));
+        // LOG_DEBUG("ourNode %d, ourPos %d, theirPos %d\n", !!ourNode, ourNode && hasValidPosition(ourNode),
+        // hasValidPosition(node));
         display->drawString(compassX - FONT_HEIGHT_SMALL / 4, compassY - FONT_HEIGHT_SMALL / 2, "?");
     }
     display->drawCircle(compassX, compassY, getCompassDiam(display) / 2);
@@ -912,6 +948,9 @@ void Screen::handleSetOn(bool on)
     if (on != screenOn) {
         if (on) {
             LOG_INFO("Turning on screen\n");
+#ifdef T_WATCH_S3
+            PMU->enablePowerOutput(XPOWERS_ALDO2);
+#endif
             dispdev.displayOn();
             dispdev.displayOn();
             enabled = true;
@@ -920,6 +959,9 @@ void Screen::handleSetOn(bool on)
         } else {
             LOG_INFO("Turning off screen\n");
             dispdev.displayOff();
+#ifdef T_WATCH_S3
+            PMU->disablePowerOutput(XPOWERS_ALDO2);
+#endif
             enabled = false;
         }
         screenOn = on;
@@ -1202,13 +1244,15 @@ void Screen::setFrames()
 
     moduleFrames = MeshModule::GetMeshModulesWithUIFrames();
     LOG_DEBUG("Showing %d module frames\n", moduleFrames.size());
+#ifdef DEBUG_PORT
     int totalFrameCount = MAX_NUM_NODES + NUM_EXTRA_FRAMES + moduleFrames.size();
     LOG_DEBUG("Total frame count: %d\n", totalFrameCount);
+#endif
 
     // We don't show the node info our our node (if we have it yet - we should)
-    size_t numnodes = nodeDB.getNumNodes();
-    if (numnodes > 0)
-        numnodes--;
+    size_t numMeshNodes = nodeDB.getNumMeshNodes();
+    if (numMeshNodes > 0)
+        numMeshNodes--;
 
     size_t numframes = 0;
 
@@ -1225,17 +1269,21 @@ void Screen::setFrames()
     LOG_DEBUG("Added modules.  numframes: %d\n", numframes);
 
     // If we have a critical fault, show it first
-    if (myNodeInfo.error_code)
+    if (error_code)
         normalFrames[numframes++] = drawCriticalFaultFrame;
 
     // If we have a text message - show it next, unless it's a phone message and we aren't using any special modules
     if (devicestate.has_rx_text_message && shouldDrawMessage(&devicestate.rx_text_message)) {
         normalFrames[numframes++] = drawTextMessageFrame;
     }
+    // If we have a waypoint - show it next, unless it's a phone message and we aren't using any special modules
+    if (devicestate.has_rx_waypoint && shouldDrawMessage(&devicestate.rx_waypoint)) {
+        normalFrames[numframes++] = drawWaypointFrame;
+    }
 
     // then all the nodes
     // We only show a few nodes in our scrolling list - because meshes with many nodes would have too many screens
-    size_t numToShow = min(numnodes, 4U);
+    size_t numToShow = min(numMeshNodes, 4U);
     for (size_t i = 0; i < numToShow; i++)
         normalFrames[numframes++] = drawNodeInfo;
 
@@ -1444,7 +1492,7 @@ void DebugInfo::drawFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16
 #ifdef ARCH_ESP32
         if (millis() - storeForwardModule->lastHeartbeat >
             (storeForwardModule->heartbeatInterval * 1200)) { // no heartbeat, overlap a bit
-#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS)
+#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS) || defined(ST7789_CS)
             display->drawFastImage(x + SCREEN_WIDTH - 14 - display->getStringWidth(ourId), y + 3 + FONT_HEIGHT_SMALL, 12, 8,
                                    imgQuestionL1);
             display->drawFastImage(x + SCREEN_WIDTH - 14 - display->getStringWidth(ourId), y + 11 + FONT_HEIGHT_SMALL, 12, 8,
@@ -1454,7 +1502,7 @@ void DebugInfo::drawFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16
                                    imgQuestion);
 #endif
         } else {
-#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS)
+#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS) || defined(ST7789_CS)
             display->drawFastImage(x + SCREEN_WIDTH - 18 - display->getStringWidth(ourId), y + 3 + FONT_HEIGHT_SMALL, 16, 8,
                                    imgSFL1);
             display->drawFastImage(x + SCREEN_WIDTH - 18 - display->getStringWidth(ourId), y + 11 + FONT_HEIGHT_SMALL, 16, 8,
@@ -1466,7 +1514,7 @@ void DebugInfo::drawFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16
         }
 #endif
     } else {
-#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS)
+#if defined(USE_EINK) || defined(ILI9341_DRIVER) || defined(ST7735_CS) || defined(ST7789_CS)
         display->drawFastImage(x + SCREEN_WIDTH - 14 - display->getStringWidth(ourId), y + 3 + FONT_HEIGHT_SMALL, 12, 8,
                                imgInfoL1);
         display->drawFastImage(x + SCREEN_WIDTH - 14 - display->getStringWidth(ourId), y + 11 + FONT_HEIGHT_SMALL, 12, 8,
@@ -1751,7 +1799,7 @@ void DebugInfo::drawFrameSettings(OLEDDisplay *display, OLEDDisplayUiState *stat
     heartbeat = !heartbeat;
 #endif
 }
-// adjust Brightness cycle trough 1 to 254 as long as attachDuringLongPress is true
+// adjust Brightness cycle through 1 to 254 as long as attachDuringLongPress is true
 void Screen::adjustBrightness()
 {
     if (!useDisplay)

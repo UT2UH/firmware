@@ -9,9 +9,9 @@
 #endif
 
 template <typename T>
-SX126xInterface<T>::SX126xInterface(RADIOLIB_PIN_TYPE cs, RADIOLIB_PIN_TYPE irq, RADIOLIB_PIN_TYPE rst, RADIOLIB_PIN_TYPE busy,
-                                    SPIClass &spi)
-    : RadioLibInterface(cs, irq, rst, busy, spi, &lora), lora(&module)
+SX126xInterface<T>::SX126xInterface(LockingArduinoHal *hal, RADIOLIB_PIN_TYPE cs, RADIOLIB_PIN_TYPE irq, RADIOLIB_PIN_TYPE rst,
+                                    RADIOLIB_PIN_TYPE busy)
+    : RadioLibInterface(hal, cs, irq, rst, busy, &lora), lora(&module)
 {
     LOG_WARN("SX126xInterface(cs=%d, irq=%d, rst=%d, busy=%d)\n", cs, irq, rst, busy);
 }
@@ -60,17 +60,33 @@ template <typename T> bool SX126xInterface<T>::init()
     LOG_DEBUG("Current limit set to %f\n", currentLimit);
     LOG_DEBUG("Current limit set result %d\n", res);
 
-#ifdef SX126X_E22
+#if defined(SX126X_E22)
     // E22 Emulation explicitly requires DIO2 as RF switch, so set it to TRUE again for good measure. In case somebody defines
     // SX126X_TX for an E22 Module
-    if (res == RADIOLIB_ERR_NONE)
+    if (res == RADIOLIB_ERR_NONE) {
+        LOG_DEBUG("SX126X_E22 mode enabled. Setting DIO2 as RF Switch\n");
         res = lora.setDio2AsRfSwitch(true);
+    }
 #endif
 
 #if defined(SX126X_TXEN) && (SX126X_TXEN != RADIOLIB_NC)
-    // lora.begin sets Dio2 as RF switch control, which is not true if we are manually controlling RX and TX
+    // If SX126X_TXEN is connected to the MCU, we are manually controlling RX and TX.
+    // But lora.begin (called above) sets Dio2 as RF switch control, which is not true here, so set it back to false.
     if (res == RADIOLIB_ERR_NONE) {
+        LOG_DEBUG("SX126X_TXEN pin defined. Setting RF Switch: RXEN=%i, TXEN=%i\n", SX126X_RXEN, SX126X_TXEN);
         res = lora.setDio2AsRfSwitch(false);
+        lora.setRfSwitchPins(SX126X_RXEN, SX126X_TXEN);
+    }
+#elif defined(SX126X_RXEN) && (SX126X_RXEN != RADIOLIB_NC && defined(E22_TXEN_CONNECTED_TO_DIO2))
+    // Otherwise, if SX126X_RXEN is connected to the MCU, and E22_TXEN_CONNECTED_TO_DIO2 is defined, we are letting the
+    // E22 control RX and TX via DIO2. In this configuration, the E22's TXEN and DIO2 pins are connected to each other,
+    // but not to the MCU.
+    // However, we must still connect the E22's RXEN pin to the MCU, define SX126X_RXEN accordingly, and then call
+    // setRfSwitchPins, otherwise RX sensitivity (observed via RSSI) is greatly diminished.
+    LOG_DEBUG("SX126X_RXEN and E22_TXEN_CONNECTED_TO_DIO2 are defined; value of res: %d", res);
+    if (res == RADIOLIB_ERR_NONE) {
+        LOG_DEBUG("SX126X_TXEN is RADIOLIB_NC, but SX126X_RXEN and E22_TXEN_CONNECTED_TO_DIO2 are both defined; calling "
+                  "lora.setRfSwitchPins.");
         lora.setRfSwitchPins(SX126X_RXEN, SX126X_TXEN);
     }
 #endif
@@ -176,8 +192,9 @@ template <typename T> void SX126xInterface<T>::setStandby()
 
     int err = lora.standby();
 
-    if (err != RADIOLIB_ERR_NONE)
+    if (err != RADIOLIB_ERR_NONE) {
         LOG_DEBUG("SX126x standby failed with error %d\n", err);
+    }
 
     assert(err == RADIOLIB_ERR_NONE);
 
@@ -245,7 +262,7 @@ template <typename T> bool SX126xInterface<T>::isChannelActive()
     return false;
 }
 
-/** Could we send right now (i.e. either not actively receving or transmitting)? */
+/** Could we send right now (i.e. either not actively receiving or transmitting)? */
 template <typename T> bool SX126xInterface<T>::isActivelyReceiving()
 {
     // The IRQ status will be cleared when we start our read operation.  Check if we've started a header, but haven't yet
