@@ -72,6 +72,7 @@ jobs:
           - board: tbeam0_7
           - board: meshtastic-diy-v1
           - board: hydra
+          - board: k46-v4
           - board: meshtastic-dr-dev
           - board: nano-g1
           - board: station-g1

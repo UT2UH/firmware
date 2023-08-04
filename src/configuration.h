@@ -109,8 +109,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MCP9808_ADDR 0x18
 #define INA_ADDR 0x40
 #define INA_ADDR_ALTERNATE 0x41
+#define UBLOX_ADDR 0x42
+#define MCP3021_ADDR 0x4D
 #define QMC6310_ADDR 0x1C
 #define QMI8658_ADDR 0x6B
+#define QMI8658_ADDR_ALT 0x6A
 #define QMC5883L_ADDR 0x1E
 #define SHTC3_ADDR 0x70
 #define LPS22HB_ADDR 0x5C
